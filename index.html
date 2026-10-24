@@ -36,6 +36,49 @@ var numEl=document.getElementById('num'), stEl=document.getElementById('st'), hi
 var armed=false, started=false, connected=false, vErr=false;
 var target=0, startT=0, syncTimer=null, last='';
 
+// ---- общее время: поправка к часам планшета ----
+var off=0, clockReady=false, offInfo='...';
+function nowS(){return Date.now()+off;}
+
+function syncClock(){
+  var prev=null, est=[], t00=Date.now();
+  function finish(){
+    if(est.length>=2){
+      est.sort(function(a,b){return a-b;});
+      var m=est[Math.floor(est.length/2)];
+      off=(Math.abs(m)>300)?m:0;
+      offInfo=Math.round(m)+'ms n='+est.length;
+    } else {
+      offInfo='fail';
+    }
+    clockReady=true;
+  }
+  function probe(){
+    if(Date.now()-t00>7000){ finish(); return; }
+    var t0=Date.now();
+    var x=new XMLHttpRequest();
+    x.open('HEAD',location.pathname+'?c='+t0+'_'+Math.floor(Math.random()*1000000),true);
+    x.onload=function(){
+      var t1=Date.now();
+      var dh=x.getResponseHeader('Date');
+      if(dh){
+        var sec=Math.floor(new Date(dh).getTime()/1000);
+        var mid=(t0+t1)/2;
+        // секунда в заголовке переключилась между прошлым и этим ответом
+        if(prev && sec===prev.sec+1 && (mid-prev.mid)<400){
+          est.push(sec*1000-(prev.mid+mid)/2);
+        }
+        prev={sec:sec,mid:mid};
+      }
+      probe();
+    };
+    x.onerror=function(){ setTimeout(probe,200); };
+    x.send();
+  }
+  probe();
+}
+syncClock();
+
 v.src='t'+tile+'.mp4';
 v.load();
 v.addEventListener('error',function(){vErr=true;},false);
@@ -49,7 +92,7 @@ function post(text){
 
 function setTarget(T){
   if(started) return;
-  if(T < Date.now()-12000) return;   // старые команды не принимаем
+  if(T < nowS()-12000) return;   // старые команды не принимаем
   target=T;
 }
 
@@ -71,25 +114,26 @@ function arm(){
   if(armed) return;
   armed=true;
   try{w.play();}catch(e){}              // экран не засыпает
+  try{ if(navigator.wakeLock){ navigator.wakeLock.request('screen'); } }catch(e){}
   try{v.play();v.pause();}catch(e){}    // разблокируем видео жестом
   try{v.currentTime=0;}catch(e){}
 }
 
 card.addEventListener('click',function(){
   arm();
-  if(isHost && !started && !target){
-    var T=Date.now()+8000;              // отсчёт 8 секунд
+  if(isHost && clockReady && !started && !target){
+    var T=nowS()+8000;                  // отсчёт 8 секунд
     setTarget(T);
     post('start:'+T);
   }
 },false);
 
-// подстройка: догоняем, где видео должно быть по часам
+// подстройка: догоняем, где видео должно быть по общему времени
 function startSync(){
   clearInterval(syncTimer);
   syncTimer=setInterval(function(){
     if(v.paused||v.ended) return;
-    var want=(Date.now()+d-startT)/1000;
+    var want=(nowS()+d-startT)/1000;
     if(want<0) return;
     var diff=want-v.currentTime;        // плюс = видео отстаёт
     if(diff>0.5||diff<-0.5){
@@ -119,7 +163,7 @@ function render(a,b,c){
 
 setInterval(function(){
   if(started) return;
-  var now=Date.now()+d;
+  var now=nowS()+d;
   var hint=vErr?('нет файла t'+tile+'.mp4'):'';
   if(target){
     var ms=target-now;
@@ -127,6 +171,7 @@ setInterval(function(){
     render(tile, Math.ceil(ms/1000), armed?hint:'тапни экран!');
     return;
   }
+  if(!clockReady){ render(tile,'Clock sync...',hint); return; }
   if(!connected){ render(tile,'Connecting...',hint); return; }
   if(isHost){ render(tile,'START',hint); return; }
   if(armed) render(tile,'Ready',hint);
@@ -152,11 +197,13 @@ if(q.cal==='1'){
   document.body.appendChild(c);
 }
 
-// ОТЛАДКА: что страница получила из адреса и какой файл грузит
+// ОТЛАДКА: адрес, файл и поправка часов
 var dbg=document.createElement('div');
 dbg.style.cssText='position:fixed;left:8px;top:8px;z-index:100;color:#fff;font:16px monospace;background:rgba(0,0,0,.6);padding:4px 8px';
-dbg.innerHTML=location.search+' → '+v.src.split('/').pop();
 document.body.appendChild(dbg);
+setInterval(function(){
+  dbg.innerHTML=location.search+' → '+v.src.split('/').pop()+' | clock '+offInfo;
+},500);
 })();
 </script>
 </body></html>
