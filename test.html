@@ -1,0 +1,84 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden}
+#n{position:fixed;left:0;right:0;top:18%;text-align:center;font-size:300px;font-weight:bold}
+#ms{position:fixed;left:0;right:0;top:62%;text-align:center;font-size:48px;color:#8cf}
+#st{position:fixed;left:0;right:0;top:5%;text-align:center;font-size:24px;color:#aaa}
+#go{position:fixed;left:15%;right:15%;bottom:8%;height:90px;font-size:36px;background:#2a8;color:#fff;border:0;border-radius:16px;display:none}
+</style></head><body>
+<div id="st"></div>
+<div id="n"></div>
+<div id="ms"></div>
+<button id="go">START</button>
+<script>
+(function(){
+// ПОМЕНЯЙ на свою строку, одинаковую на обоих планшетах
+var TOPIC='g500BIHl4v2f0';
+
+var q={}, parts=location.search.substring(1).split('&');
+for(var i=0;i<parts.length;i++){var kv=parts[i].split('=');q[kv[0]]=kv[1];}
+var isHost=(q.host==='1');
+var d=parseInt(q.d||'0',10);   // мс, плюс = стартовать раньше
+
+var n=document.getElementById('n'), ms=document.getElementById('ms');
+var st=document.getElementById('st'), go=document.getElementById('go');
+var target=0, status='не подключено';
+
+function post(text){
+  var x=new XMLHttpRequest();
+  x.open('POST','https://ntfy.sh/'+TOPIC,true);
+  x.setRequestHeader('Content-Type','text/plain');
+  x.send(text);
+}
+
+function connect(){
+  var es=new EventSource('https://ntfy.sh/'+TOPIC+'/sse');
+  es.onopen=function(){status='подключено';};
+  es.onerror=function(){status='переподключение...';};
+  es.onmessage=function(e){
+    var m;
+    try{m=JSON.parse(e.data);}catch(x){return;}
+    if(m.event && m.event!=='message') return;
+    var t=m.message||'';
+    if(t.indexOf('start:')===0){
+      var T=parseInt(t.substring(6),10);
+      if(T > Date.now()-12000) target=T;   // не принимаем старые команды
+    }
+  };
+}
+connect();
+
+go.onclick=function(){
+  var T=Date.now()+5000;
+  target=T;
+  post('start:'+T);
+};
+
+setInterval(function(){
+  var now=Date.now()+d;
+  st.innerHTML=(isHost?'ХОСТ · ':'')+status;
+  if(!target){
+    n.innerHTML='-'; ms.innerHTML=isHost?'жми START':'ждём команду';
+    go.style.display=isHost?'block':'none';
+    return;
+  }
+  go.style.display='none';
+  var el=now-target;                 // мс от момента старта
+  if(el<0){
+    n.innerHTML='·'; ms.innerHTML='старт через '+Math.ceil(-el/1000)+' с';
+    return;
+  }
+  var num=10-Math.floor(el/1000);
+  if(num<1){
+    n.innerHTML='0'; ms.innerHTML='готово';
+    target=0;
+    return;
+  }
+  n.innerHTML=num;
+  ms.innerHTML=el;                   // миллисекунды с момента старта
+},10);
+})();
+</script>
+</body></html>
