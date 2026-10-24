@@ -4,7 +4,7 @@
 <style>
 html,body{margin:0;height:100%;background:#1c1c1c;overflow:hidden;
   font-family:-apple-system,Helvetica,Arial,sans-serif;-webkit-user-select:none;user-select:none}
-#v{position:fixed;left:0;top:0;width:100%;height:100%;background:#000;z-index:1}
+#v{position:fixed;left:0;top:0;width:100%;height:100%;background:#000;object-fit:fill;z-index:1}
 #w{position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01}
 #ui{position:fixed;left:0;top:0;right:0;bottom:0;background:#1c1c1c;z-index:5}
 #card{position:absolute;left:5%;right:5%;top:4%;bottom:4%;background:#4196c0;
@@ -12,7 +12,7 @@ html,body{margin:0;height:100%;background:#1c1c1c;overflow:hidden;
   display:flex;flex-direction:column;align-items:center;justify-content:center}
 #num{font-size:90px;line-height:1.1}
 #st{font-size:64px;font-weight:600;line-height:1.2}
-#hint{font-size:26px;opacity:.7;margin-top:30px;min-height:32px}
+#hint{font-size:26px;opacity:.8;margin-top:30px;min-height:32px;padding:0 20px}
 </style></head><body>
 <video id="v" muted playsinline webkit-playsinline preload="auto"></video>
 <video id="w" muted playsinline webkit-playsinline loop src="wake.mp4"></video>
@@ -33,10 +33,12 @@ var d=parseInt(q.d||'0',10);   // мс, плюс = стартовать рань
 var v=document.getElementById('v'), w=document.getElementById('w');
 var ui=document.getElementById('ui'), card=document.getElementById('card');
 var numEl=document.getElementById('num'), stEl=document.getElementById('st'), hintEl=document.getElementById('hint');
-var armed=false, started=false, connected=false, target=0, last='';
+var armed=false, started=false, connected=false, vErr=false;
+var target=0, startT=0, syncTimer=null, last='';
 
 v.src='t'+tile+'.mp4';
 v.load();
+v.addEventListener('error',function(){vErr=true;},false);
 
 function post(text){
   var x=new XMLHttpRequest();
@@ -76,11 +78,37 @@ function arm(){
 card.addEventListener('click',function(){
   arm();
   if(isHost && !started && !target){
-    var T=Date.now()+5000;
+    var T=Date.now()+8000;              // отсчёт 8 секунд
     setTarget(T);
     post('start:'+T);
   }
 },false);
+
+// подстройка: догоняем, где видео должно быть по часам
+function startSync(){
+  clearInterval(syncTimer);
+  syncTimer=setInterval(function(){
+    if(v.paused||v.ended) return;
+    var want=(Date.now()+d-startT)/1000;
+    if(want<0) return;
+    var diff=want-v.currentTime;        // плюс = видео отстаёт
+    if(diff>0.5||diff<-0.5){
+      try{v.currentTime=want;}catch(e){}
+      v.playbackRate=1;
+    }
+    else if(diff>0.06){ v.playbackRate=1.05; }
+    else if(diff<-0.06){ v.playbackRate=0.95; }
+    else { v.playbackRate=1; }
+  },300);
+}
+
+function begin(){
+  started=true;
+  startT=target;
+  ui.style.display='none';
+  try{v.play();}catch(e){}
+  startSync();
+}
 
 function render(a,b,c){
   var s=a+'|'+b+'|'+c;
@@ -92,27 +120,37 @@ function render(a,b,c){
 setInterval(function(){
   if(started) return;
   var now=Date.now()+d;
+  var hint=vErr?('нет файла t'+tile+'.mp4'):'';
   if(target){
     var ms=target-now;
-    if(ms<=0){
-      started=true;
-      ui.style.display='none';
-      v.currentTime=0;
-      v.play();
-      return;
-    }
-    render(tile, Math.ceil(ms/1000), '');
+    if(ms<=0){ begin(); return; }
+    render(tile, Math.ceil(ms/1000), armed?hint:'тапни экран!');
     return;
   }
-  if(!connected){ render(tile,'Connecting...',''); return; }
-  if(isHost){ render(tile,'START', armed?'':''); return; }
-  render(tile, armed?'Ready':'Connected', armed?'':'тапни экран один раз');
+  if(!connected){ render(tile,'Connecting...',hint); return; }
+  if(isHost){ render(tile,'START',hint); return; }
+  if(armed) render(tile,'Ready',hint);
+  else render(tile,'Connected',hint||'тапни экран один раз');
 },50);
 
 v.addEventListener('ended',function(){
+  clearInterval(syncTimer);
+  v.playbackRate=1;
   started=false; target=0; last='';
   ui.style.display='block';
 },false);
+
+// калибровка: ?cal=1 показывает размер видимой области
+if(q.cal==='1'){
+  var c=document.createElement('div');
+  c.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;z-index:99;background:#222;color:#fff;font:22px sans-serif;border:6px solid red;box-sizing:border-box';
+  var h='<div style="padding:12px;font-size:30px">'+window.innerWidth+' x '+window.innerHeight+' px</div>';
+  for(var y=50;y<window.innerHeight;y+=50){
+    h+='<div style="position:absolute;left:0;right:0;top:'+y+'px;border-top:1px solid #0f0;font-size:14px;color:#0f0">'+y+'</div>';
+  }
+  c.innerHTML=h;
+  document.body.appendChild(c);
+}
 })();
 </script>
 </body></html>
