@@ -1,0 +1,118 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+html,body{margin:0;height:100%;background:#1c1c1c;overflow:hidden;
+  font-family:-apple-system,Helvetica,Arial,sans-serif;-webkit-user-select:none;user-select:none}
+#v{position:fixed;left:0;top:0;width:100%;height:100%;background:#000;z-index:1}
+#w{position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01}
+#ui{position:fixed;left:0;top:0;right:0;bottom:0;background:#1c1c1c;z-index:5}
+#card{position:absolute;left:5%;right:5%;top:4%;bottom:4%;background:#4196c0;
+  border-radius:48px;color:#fff;text-align:center;
+  display:flex;flex-direction:column;align-items:center;justify-content:center}
+#num{font-size:90px;line-height:1.1}
+#st{font-size:64px;font-weight:600;line-height:1.2}
+#hint{font-size:26px;opacity:.7;margin-top:30px;min-height:32px}
+</style></head><body>
+<video id="v" muted playsinline webkit-playsinline preload="auto"></video>
+<video id="w" muted playsinline webkit-playsinline loop src="wake.mp4"></video>
+<div id="ui"><div id="card">
+  <div id="num"></div><div id="st"></div><div id="hint"></div>
+</div></div>
+<script>
+(function(){
+// ТОТ ЖЕ TOPIC, что в test.html
+var TOPIC='g500BIHl4v2f0';
+
+var q={}, parts=location.search.substring(1).split('&');
+for(var i=0;i<parts.length;i++){var kv=parts[i].split('=');q[kv[0]]=kv[1];}
+var tile=q.tile||'1';
+var isHost=(q.host==='1');
+var d=parseInt(q.d||'0',10);   // мс, плюс = стартовать раньше
+
+var v=document.getElementById('v'), w=document.getElementById('w');
+var ui=document.getElementById('ui'), card=document.getElementById('card');
+var numEl=document.getElementById('num'), stEl=document.getElementById('st'), hintEl=document.getElementById('hint');
+var armed=false, started=false, connected=false, target=0, last='';
+
+v.src='t'+tile+'.mp4';
+v.load();
+
+function post(text){
+  var x=new XMLHttpRequest();
+  x.open('POST','https://ntfy.sh/'+TOPIC,true);
+  x.setRequestHeader('Content-Type','text/plain');
+  x.send(text);
+}
+
+function setTarget(T){
+  if(started) return;
+  if(T < Date.now()-12000) return;   // старые команды не принимаем
+  target=T;
+}
+
+function connect(){
+  var es=new EventSource('https://ntfy.sh/'+TOPIC+'/sse');
+  es.onopen=function(){connected=true;};
+  es.onerror=function(){connected=false;};
+  es.onmessage=function(e){
+    var m;
+    try{m=JSON.parse(e.data);}catch(x){return;}
+    if(m.event && m.event!=='message') return;
+    var t=m.message||'';
+    if(t.indexOf('start:')===0) setTarget(parseInt(t.substring(6),10));
+  };
+}
+connect();
+
+function arm(){
+  if(armed) return;
+  armed=true;
+  try{w.play();}catch(e){}              // экран не засыпает
+  try{v.play();v.pause();}catch(e){}    // разблокируем видео жестом
+  try{v.currentTime=0;}catch(e){}
+}
+
+card.addEventListener('click',function(){
+  arm();
+  if(isHost && !started && !target){
+    var T=Date.now()+5000;
+    setTarget(T);
+    post('start:'+T);
+  }
+},false);
+
+function render(a,b,c){
+  var s=a+'|'+b+'|'+c;
+  if(s===last) return;
+  last=s;
+  numEl.innerHTML=a; stEl.innerHTML=b; hintEl.innerHTML=c;
+}
+
+setInterval(function(){
+  if(started) return;
+  var now=Date.now()+d;
+  if(target){
+    var ms=target-now;
+    if(ms<=0){
+      started=true;
+      ui.style.display='none';
+      v.currentTime=0;
+      v.play();
+      return;
+    }
+    render(tile, Math.ceil(ms/1000), '');
+    return;
+  }
+  if(!connected){ render(tile,'Connecting...',''); return; }
+  if(isHost){ render(tile,'START', armed?'':''); return; }
+  render(tile, armed?'Ready':'Connected', armed?'':'тапни экран один раз');
+},50);
+
+v.addEventListener('ended',function(){
+  started=false; target=0; last='';
+  ui.style.display='block';
+},false);
+})();
+</script>
+</body></html>
