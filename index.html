@@ -151,6 +151,12 @@ if(q.cal==='1'){
   c.innerHTML=h;
   document.body.appendChild(c);
 }
+
+// ОТЛАДКА: что страница получила из адреса и какой файл грузит
+var dbg=document.createElement('div');
+dbg.style.cssText='position:fixed;left:8px;top:8px;z-index:100;color:#fff;font:16px monospace;background:rgba(0,0,0,.6);padding:4px 8px';
+dbg.innerHTML=location.search+' → '+v.src.split('/').pop();
+document.body.appendChild(dbg);
 })();
 </script>
 </body></html>
